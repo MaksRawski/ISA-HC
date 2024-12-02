@@ -1,0 +1,12 @@
+[package]
+name = "lab4-rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+iced = "0.13.1"
+
+[profile.release]
+lto = "thin"
+strip = true
+opt-level = "s"
