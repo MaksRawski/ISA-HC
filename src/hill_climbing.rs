@@ -1,104 +1,33 @@
-use std::f32::consts::PI;
+use crate::utils::{f_bin, Bin, Real, SolutionSpace};
+use rand::{thread_rng, Rng};
 
-use crate::ValidatedInputs;
-
-pub struct Precision {
-    /// length of the binary representation of each possible solution within the SolutionSpace
-    pub l: usize,
-    /// smallest decimal step size e.g. 0.001
-    pub d: f32,
+fn random_l_bit_bin<R: Rng>(rng: &mut R, l: u32) -> Bin {
+    Bin(rng.next_u32() & (2_u32.pow(l) - 1))
 }
 
-impl Precision {
-    pub fn round(&self, x: f32) -> f32 {
-        (x / self.d).round() * self.d
-    }
-}
+pub fn hill_climb(space: &SolutionSpace, t: usize) -> Real {
+    let mut rng = thread_rng();
 
-pub struct SolutionSpace {
-    pub a: f32,
-    pub b: f32,
-    pub precision: Precision,
-}
+    let mut vc = random_l_bit_bin(&mut rng, space.precision.l as u32);
 
-impl SolutionSpace {
-    pub fn from_d(a: f32, b: f32, d: f32) -> Result<Self, String> {
-        if b < a {
-            return Err(format!("Invalid range: [{}, {}]", a, b));
-        }
-
-        if d <= 0.0 || (d * 10.0_f32.powf(d.log10().floor())).fract() != 0.0 {
-            return Err(format!(
-                "Step size must be a fractional power of 10, but got d={}",
-                d
-            ));
-        }
-
-        let l = ((b - a) / d + 1.0).log2().ceil() as usize;
-
-        Ok(Self {
-            a,
-            b,
-            precision: Precision { d, l },
-        })
-    }
-
-    /// Creates a `GenotypeSpace` using decimal places.
-    pub fn from_decimal_places(a: f32, b: f32, decimal_places: usize) -> Result<Self, String> {
-        if b < a {
-            return Err(format!("Invalid range: [{}, {}]", a, b));
-        }
-
-        let step_size = 10_f32.powi(-(decimal_places as i32));
-        let l = ((b - a) / step_size + 1.0).log2().ceil() as usize;
-
-        Ok(Self {
-            a,
-            b,
-            precision: Precision { d: step_size, l },
-        })
-    }
-
-    /// Creates a `GenotypeSpace` using genotype length `l`.
-    pub fn from_l(a: f32, b: f32, l: usize) -> Result<Self, String> {
-        if l < 1 || l > 31 {
-            return Err(format!(
-                "Genotype length must be in range [1, 31], got l={}",
-                l
-            ));
-        }
-
-        let num_of_values = 2_usize.pow(l as u32);
-        let step_size = (b - a) / (num_of_values as f32 - 1.0);
-
-        if step_size > 1.0 {
-            return Err(format!(
-                "Range [{}, {}] cannot be represented with l={} bits.",
-                a, b, l
-            ));
-        }
-
-        Ok(Self {
-            a,
-            b,
-            precision: Precision { d: step_size, l },
-        })
-    }
-    pub fn a(&self) -> f32 {
-        self.a
-    }
-}
-
-fn f(x: f32) -> f32 {
-    (x % 1.0) * ((20.0 * PI * x).cos() - x.sin())
-}
-
-pub fn hill_climb(inputs: &ValidatedInputs) -> f32 {
-    let space = SolutionSpace::from_d(inputs.a, inputs.b, inputs.d);
     // let vc = random number that can fit in space.precision.l bits
-    for t in 0..inputs.t {
-        // create l variations of vc, each with nth bit mutated
-        // and choose the best one
+    for _ in 0..t {
+        loop {
+            let mutations = (0..space.precision.l).map(|n| vc.flip_nth_bit(n));
+            let best_mutation = mutations
+                .max_by(|x, y| {
+                    f_bin(x, &space)
+                        .partial_cmp(&f_bin(y, &space))
+                        .expect("NaN appeared in mutations!")
+                })
+                .unwrap();
+
+            if f_bin(&best_mutation, &space) > f_bin(&vc, &space) {
+                vc = best_mutation;
+            } else {
+                break;
+            }
+        }
     }
-    0.0
+    vc.to_real(&space)
 }
